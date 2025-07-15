@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Helmet Safety Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f5f5f5;
+      margin: 0;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      background: #333;
+      color: white;
+      padding: 15px 20px;
+      border-radius: 5px 5px 0 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      display: none;
+    }
+    .status.error {
+      background: #ffdddd;
+      border: 1px solid #f44336;
+      display: block;
+    }
+    .status.success {
+      background: #ddffdd;
+      border: 1px solid #4CAF50;
+      display: block;
+    }
+    .dashboard {
+      background: white;
+      padding: 20px;
+      border-radius: 0 0 5px 5px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: center;
+    }
+    th {
+      background: #333;
+      color: white;
+      position: sticky;
+      top: 0;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    tr.danger {
+      background-color: #ffdddd;
+    }
+    .loader {
+      border: 5px solid #f3f3f3;
+      border-top: 5px solid #333;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+      display: none;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 15px;
+    }
+    .refresh-button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .refresh-button:hover {
+      background: #45a049;
+    }
+    .no-data {
+      text-align: center;
+      padding: 30px;
+      color: #777;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Helmet Safety Monitoring Dashboard</h1>
+      <div id="connection-status">Connected</div>
+    </header>
+    
+    <div id="status-message" class="status"></div>
+    
+    <div class="dashboard">
+      <div class="controls">
+        <div>
+          <button id="refresh-button" class="refresh-button">Refresh Data</button>
+          <span id="last-updated"></span>
+        </div>
+        <div>
+          <label for="auto-refresh">Auto-refresh:</label>
+          <input type="checkbox" id="auto-refresh" checked>
+        </div>
+      </div>
+      
+      <div id="loader" class="loader"></div>
+      
+      <table id="data-table">
+        <thead>
+          <tr>
+            <th>Helmet ID</th>
+            <th>Temperature (°C)</th>
+            <th>Gas</th>
+            <th>G-Force</th>
+            <th>Danger</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <!-- Data will be injected here -->
+        </tbody>
+      </table>
+      <div id="no-data" class="no-data" style="display:none;">No data available</div>
+    </div>
+  </div>
+  
+  <script>
+    // Global variables
+    const baseUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:5000' 
+      : window.location.origin;
+    let autoRefreshInterval;
+    const tableBody = document.getElementById('table-body');
+    const statusMessage = document.getElementById('status-message');
+    const loader = document.getElementById('loader');
+    const noDataMessage = document.getElementById('no-data');
+    const lastUpdatedSpan = document.getElementById('last-updated');
+    const connectionStatus = document.getElementById('connection-status');
+    const refreshButton = document.getElementById('refresh-button');
+    const autoRefreshCheckbox = document.getElementById('auto-refresh');
+    
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', initialize);
+    refreshButton.addEventListener('click', fetchData);
+    autoRefreshCheckbox.addEventListener('change', toggleAutoRefresh);
+    
+    function initialize() {
+      fetchData();
+      toggleAutoRefresh();
+    }
+    
+    function toggleAutoRefresh() {
+      if (autoRefreshCheckbox.checked) {
+        autoRefreshInterval = setInterval(fetchData, 5000);
+        console.log("Auto-refresh enabled");
+      } else {
+        clearInterval(autoRefreshInterval);
+        console.log("Auto-refresh disabled");
+      }
+    }
+    
+    function updateLastUpdated() {
+      const now = new Date();
+      lastUpdatedSpan.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+    }
+    
+    function showError(message) {
+      statusMessage.textContent = `Error: ${message}`;
+      statusMessage.className = 'status error';
+      connectionStatus.textContent = 'Disconnected';
+      connectionStatus.style.color = '#f44336';
+    }
+    
+    function clearError() {
+      statusMessage.className = 'status';
+      statusMessage.textContent = '';
+      connectionStatus.textContent = 'Connected';
+      connectionStatus.style.color = '#4CAF50';
+    }
+    
+    async function fetchData() {
+      loader.style.display = 'block';
+      
+      try {
+        const response = await fetch(`${baseUrl}/logs`);
+        
+        if (!response.ok) {
+          if (response.status === 405) {
+            throw new Error('Method not allowed. Make sure server accepts GET requests at /logs');
+          } else {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+          }
+        }
+        
+        const data = await response.json();
+        updateTable(data);
+        clearError();
+        updateLastUpdated();
+        
+      } catch (err) {
+        console.error("Error fetching data:", err);
+        showError(err.message);
+        
+        // Show "No data" message if the table is empty
+        if (tableBody.children.length === 0) {
+          noDataMessage.style.display = 'block';
+        }
+      } finally {
+        loader.style.display = 'none';
+      }
+    }
+    
+    function updateTable(data) {
+      if (!data || data.length === 0) {
+        tableBody.innerHTML = '';
+        noDataMessage.style.display = 'block';
+        return;
+      }
+      
+      noDataMessage.style.display = 'none';
+      tableBody.innerHTML = ''; // Clear previous data
+      
+      // Sort data by timestamp (newest first)
+      data.slice().reverse().forEach(entry => {
+        const row = document.createElement("tr");
+        if (entry.danger) {
+          row.classList.add("danger");
+        }
+        
+        // Format timestamp
+        const timestamp = new Date(entry.timestamp);
+        const formattedTime = isNaN(timestamp) 
+          ? entry.timestamp 
+          : timestamp.toLocaleString();
+        
+        row.innerHTML = `
+          <td>${entry.helmet_id || 'Unknown'}</td>
+          <td>${entry.temperature ? entry.temperature.toFixed(2) : 'N/A'}</td>
+          <td>${entry.gas || 'N/A'}</td>
+          <td>${entry.g_force ? entry.g_force.toFixed(2) : 'N/A'}</td>
+          <td>${entry.danger ? "⚠ Yes" : "No"}</td>
+          <td>${formattedTime}</td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+  </script>
+</body>
+</html>
